@@ -72,6 +72,10 @@
                 content: novoEstado,
                 updated_at: new Date() 
             });
+            // Adicione isso para debug no celular:
+            if (error) {
+            alert("Erro no Supabase: " + error.message);
+            }
         };
 
         const carregarDados = async () => {
