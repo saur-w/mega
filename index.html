@@ -66,18 +66,6 @@
 
         // --- LÓGICA DE SINCRONIZAÇÃO SUPABASE ---
 
-        const salvarNoBanco = async (novoEstado) => {
-            await supabaseClient.from('bolao_data').upsert({ 
-                id: 'estado_geral', 
-                content: novoEstado,
-                updated_at: new Date() 
-            });
-            // Adicione isso para debug no celular:
-            if (error) {
-            alert("Erro no Supabase: " + error.message);
-            }
-        };
-
         const carregarDados = async () => {
             const { data } = await supabaseClient
                 .from('bolao_data')
@@ -106,7 +94,7 @@
                 participantes, apostas, estrategia, aprovacoes, sugestoes,
                 ...overrides
             };
-            await salvarNoBanco(snapshot);
+            
         };
 
         // --- LÓGICA ORIGINAL RESTAURADA ---
@@ -118,25 +106,15 @@
             setNumerosEscolhidos(p.numeros || []); 
         };
 
-        // const salvarNumeros = async () => {
-        //     if (numerosEscolhidos.length === 0) return alert('Escolha pelo menos 1 número!');
-        //     const novos = participantes.map(p => p.id === participanteSelecionado.id ? {...p, numeros: numerosEscolhidos} : p);
-        //     setParticipantes(novos);
-        //     await syncSnapshot({ participantes: novos });
-        //     alert('Números salvos no banco! ✅');
-        //     setParticipanteSelecionado(null);
-        //     setNumerosEscolhidos([]);
-        // };
-
         const salvarNumeros = async () => {
             if (numerosEscolhidos.length === 0) return alert('Escolha pelo menos 1 número!');
-                
-            // 1. Prepara o dado primeiro
+
+            // 1. Prepara os novos dados
             const novosParticipantes = participantes.map(p => 
                 p.id === participanteSelecionado.id ? {...p, numeros: numerosEscolhidos} : p
             );
         
-            // 2. Tenta salvar no banco ANTES de fechar a tela
+            // 2. Tenta salvar no Supabase
             try {
                 const { error } = await supabaseClient
                     .from('bolao_data')
@@ -144,24 +122,31 @@
                         id: 'estado_geral', 
                         content: { 
                             participantes: novosParticipantes, 
-                            apostas, estrategia, aprovacoes, sugestoes 
+                            apostas, 
+                            estrategia, 
+                            aprovacoes, 
+                            sugestoes 
                         },
-                        updated_at: new Date() 
+                        updated_at: new Date().toISOString()
                     });
                 
                 if (error) {
-                    alert("Erro ao sincronizar: " + error.message);
-                    return; // Interrompe se der erro
+                    alert("Erro ao salvar: " + error.message);
+                    console.error("Erro Supabase:", error);
+                    return;
                 }
             
-                // 3. Só atualiza a tela se o banco confirmou
+                // 3. Atualiza a interface
                 setParticipantes(novosParticipantes);
-                alert('Sincronizado com sucesso! ✅');
+                alert('Números salvos! ✅');
                 setParticipanteSelecionado(null);
-            
+                setNumerosEscolhidos([]);
+
             } catch (err) {
-                alert("Falha catastrófica: " + err.message);
+                alert("Erro: " + err.message);
+                console.error("Erro catch:", err);
             }
+        };
         };
         const toggleNumero = (num) => {
             if (numerosEscolhidos.includes(num)) setNumerosEscolhidos(numerosEscolhidos.filter(n => n !== num));
