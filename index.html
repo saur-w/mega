@@ -5,17 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tavares e Agregados - Mega da Virada 2025</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body class="bg-gradient-to-br from-green-900 via-green-800 to-emerald-900 min-h-screen p-4">
     <div id="root"></div>
+
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
     <script type="text/babel">
     const { useState, useEffect } = React;
+
+    // CONFIGURAÇÃO SUPABASE - COLOQUE SUAS CHAVES AQUI
+    const SUPABASE_URL = 'https://pyhkhudqlbimkowvqtxe.supabase.co'; 
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5aGtodWRxbGJpbWtvd3ZxdHhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY5NTQxMzIsImV4cCI6MjA4MjUzMDEzMn0.ifgPFlRb9LHZHq3_H2sHMPY7wSpvRXDtaJikI0U86eE';
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
     const SENHA_ACESSO = '2025';
-    //const SENHA_ADMIN = 'admin2025';
     const VALOR_TOTAL_BOLAO = 810.00;
+    
     const PARTICIPANTES_INICIAIS = [
         { id: 1, nome: "Sara Santana", cotas: 3, valorPago: 45.00, numeros: [] },
         { id: 2, nome: "Cida Regoso", cotas: 2, valorPago: 30.00, numeros: [] },
@@ -41,61 +50,93 @@
         { id: 22, nome: "Fatima", cotas: 1, valorPago: 15.00, numeros: [] },
         { id: 23, nome: "Leticia", cotas: 2, valorPago: 30.00, numeros: [] },
         { id: 24, nome: "Marcus e Gabs", cotas: 4, valorPago: 60.00, numeros: [] },
-        { id: 25, nome: "Alana e Pedro", cotas: 2, valorPago: 30.00, numeros: [] },
+        { id: 25, nome: "Alana e Pedro", cotas: 2, valorPago: 30.00, numeros: [] }
     ];
-    
+
     function App() {
         const [logado, setLogado] = useState(false);
         const [senhaInput, setSenhaInput] = useState('');
         const [pagina, setPagina] = useState('home');
-        const [participantes, setParticipantes] = useState([]);
+        const [participantes, setParticipantes] = useState(PARTICIPANTES_INICIAIS);
         const [participanteSelecionado, setParticipanteSelecionado] = useState(null);
         const [numerosEscolhidos, setNumerosEscolhidos] = useState([]);
         const [estrategia, setEstrategia] = useState('hibrida-b');
         const [apostas, setApostas] = useState([]);
-        const [autenticadoAdmin, setAutenticadoAdmin] = useState(true);
-        const [senhaAdmin, setSenhaAdmin] = useState('');
         const [aprovacoes, setAprovacoes] = useState([]);
         const [nomeAprovacao, setNomeAprovacao] = useState('');
         const [sugestoes, setSugestoes] = useState([]);
         const [novaSugestao, setNovaSugestao] = useState('');
+
+        // --- FUNÇÕES DE PERSISTÊNCIA ---
         
-        useEffect(() => {
-            const salvos = localStorage.getItem('tavaresbolao2025');
-            if (salvos) setParticipantes(JSON.parse(salvos)); else setParticipantes(PARTICIPANTES_INICIAIS);
-            const apostaSalvas = localStorage.getItem('tavaresApostas2025');
-            if (apostaSalvas) setApostas(JSON.parse(apostaSalvas));
-            const estrategiaSalva = localStorage.getItem('tavaresEstrategia2025');
-            if (estrategiaSalva) setEstrategia(estrategiaSalva);
-            const aprovSalvas = localStorage.getItem('tavaresAprovacoes2025');
-            if (aprovSalvas) setAprovacoes(JSON.parse(aprovSalvas));
-            const sugestoesSalvas = localStorage.getItem('tavaresSugestoes2025');
-            if (sugestoesSalvas) setSugestoes(JSON.parse(sugestoesSalvas));
-        }, []);
-        
+        const carregarDados = async () => {
+            const { data, error } = await supabaseClient
+                .from('bolao_data')
+                .select('content')
+                .eq('id', 'estado_geral')
+                .single();
+
+            if (data?.content) {
+                const c = data.content;
+                if (c.participantes) setParticipantes(c.participantes);
+                if (c.apostas) setApostas(c.apostas);
+                if (c.estrategia) setEstrategia(c.estrategia);
+                if (c.aprovacoes) setAprovacoes(c.aprovacoes);
+                if (c.sugestoes) setSugestoes(c.sugestoes);
+            }
+        };
+
+        const salvarNoBanco = async (novoEstado) => {
+            await supabaseClient.from('bolao_data').upsert({
+                id: 'estado_geral',
+                content: novoEstado,
+                updated_at: new Date()
+            });
+        };
+
+        const syncCompleto = async (overrides = {}) => {
+            const estadoAtual = {
+                participantes, apostas, estrategia, aprovacoes, sugestoes,
+                ...overrides
+            };
+            await salvarNoBanco(estadoAtual);
+        };
+
+        useEffect(() => { carregarDados(); }, []);
+
+        // --- LÓGICA DE INTERAÇÃO ---
+
         const fazerLogin = () => senhaInput === SENHA_ACESSO ? setLogado(true) : alert('Senha incorreta!');
-        const abrirEscolhaNumeros = (p) => { setParticipanteSelecionado(p); setNumerosEscolhidos(p.numeros || []); };
-        const salvarNumeros = () => {
+        
+        const abrirEscolhaNumeros = (p) => { 
+            setParticipanteSelecionado(p); 
+            setNumerosEscolhidos(p.numeros || []); 
+        };
+
+        const salvarNumeros = async () => {
             if (numerosEscolhidos.length === 0) return alert('Escolha pelo menos 1 número!');
             const novos = participantes.map(p => p.id === participanteSelecionado.id ? {...p, numeros: numerosEscolhidos} : p);
             setParticipantes(novos);
-            localStorage.setItem('tavaresbolao2025', JSON.stringify(novos));
-            alert('Números salvos! ✅');
+            await syncCompleto({ participantes: novos });
+            alert('Números sincronizados! ✅');
             setParticipanteSelecionado(null);
-            setNumerosEscolhidos([]);
         };
+
         const toggleNumero = (num) => {
             if (numerosEscolhidos.includes(num)) setNumerosEscolhidos(numerosEscolhidos.filter(n => n !== num));
             else if (numerosEscolhidos.length < 6) setNumerosEscolhidos([...numerosEscolhidos, num].sort((a,b) => a-b));
         };
+
         const todosNumeros = () => {
             const nums = [];
             participantes.forEach(p => p.numeros && nums.push(...p.numeros));
             return [...new Set(nums)].sort((a,b) => a-b);
         };
-        const gerarApostas = () => {
+
+        const gerarApostas = async () => {
             const pool = todosNumeros();
-            if (pool.length < 6) return alert('Mínimo 6 números!');
+            if (pool.length < 6) return alert('Mínimo 6 números escolhidos pelo grupo!');
+            
             const resultado = [];
             const sortear = (qt) => {
                 const nums = [], temp = [...pool];
@@ -110,73 +151,108 @@
                 }
                 return nums.sort((a,b) => a-b);
             };
+
             if (estrategia === 'hibrida-a') {
-                resultado.push({tipo: '9 números', nums: sortear(9), custo: 252});
-                resultado.push({tipo: '7 números', nums: sortear(7), custo: 35});
-                resultado.push({tipo: '7 números', nums: sortear(7), custo: 35});
-                for (let i=0; i<10; i++) resultado.push({tipo: '6 números', nums: sortear(6), custo: 5});
+                resultado.push({tipo: '9 números', nums: sortear(9)});
+                resultado.push({tipo: '7 números', nums: sortear(7)});
+                resultado.push({tipo: '7 números', nums: sortear(7)});
+                for (let i=0; i<10; i++) resultado.push({tipo: '6 números', nums: sortear(6)});
             } else {
-                resultado.push({tipo: '9 números', nums: sortear(9), custo: 252});
-                for (let i=0; i<5; i++) resultado.push({tipo: '7 números', nums: sortear(7), custo: 35});
-                for (let i=0; i<16; i++) resultado.push({tipo: '6 números', nums: sortear(6), custo: 5});
+                resultado.push({tipo: '9 números', nums: sortear(9)});
+                for (let i=0; i<5; i++) resultado.push({tipo: '7 números', nums: sortear(7)});
+                for (let i=0; i<16; i++) resultado.push({tipo: '6 números', nums: sortear(6)});
             }
+            
             setApostas(resultado);
-            localStorage.setItem('tavaresApostas2025', JSON.stringify(resultado));
-            localStorage.setItem('tavaresEstrategia2025', estrategia);
-            alert('Apostas geradas! ✅');
+            await syncCompleto({ apostas: resultado, estrategia });
+            alert('Apostas oficiais geradas e salvas! 🚀');
         };
-        const aprovar = () => {
+
+        const aprovar = async () => {
             if (!nomeAprovacao.trim()) return alert('Digite seu nome!');
-            if (aprovacoes.includes(nomeAprovacao.trim())) return alert('Você já aprovou!');
             const novas = [...aprovacoes, nomeAprovacao.trim()];
             setAprovacoes(novas);
-            localStorage.setItem('tavaresAprovacoes2025', JSON.stringify(novas));
+            await syncCompleto({ aprovacoes: novas });
             setNomeAprovacao('');
-            alert('Aprovação registrada! ✅');
         };
-        const adicionarSugestao = () => {
-            if (!novaSugestao.trim()) return alert('Digite uma sugestão!');
+
+        const adicionarSugestao = async () => {
             const nome = prompt('Seu nome:');
             if (!nome) return;
             const nova = {nome, sugestao: novaSugestao, data: new Date().toLocaleString()};
             const novas = [...sugestoes, nova];
             setSugestoes(novas);
-            localStorage.setItem('tavaresSugestoes2025', JSON.stringify(novas));
+            await syncCompleto({ sugestoes: novas });
             setNovaSugestao('');
-            alert('Sugestão enviada! ✅');
         };
-        const exportar = () => {
-            let txt = '═══════════════════════════════════════\n  TAVARES E AGREGADOS - MEGA DA VIRADA 2025\n═══════════════════════════════════════\n\n';
-            txt += `VALOR TOTAL: R$ ${VALOR_TOTAL_BOLAO.toFixed(2)}\nESTRATÉGIA: ${estrategia === 'hibrida-a' ? 'Opção A (R$ 648)' : 'Opção B (R$ 810)'}\n\nPARTICIPANTES:\n`;
-            participantes.forEach((p, i) => {
-                txt += `${String(i+1).padStart(2, '0')}. ${p.nome} | ${p.cotas} cota(s) | R$ ${p.valorPago.toFixed(2)}\n    Números: ${p.numeros?.length > 0 ? p.numeros.join(', ') : 'Não escolheu'}\n`;
-            });
-            txt += '\nAPOSTAS:\n';
-            apostas.forEach((a, i) => txt += `${String(i+1).padStart(3, '0')}. [${a.tipo}] ${a.nums.map(n => String(n).padStart(2,'0')).join('-')}\n`);
-            const blob = new Blob([txt], {type: 'text/plain;charset=utf-8'});
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = 'tavares-mega-2025.txt';
-            link.click();
-        };
-        
-        if (!logado) return (<div className="max-w-md mx-auto mt-20"><div className="bg-white rounded-xl p-8 shadow-2xl"><div className="text-center mb-6"><div className="text-6xl mb-4">🎰</div><h1 className="text-2xl font-bold text-green-900 mb-1">Tavares e Agregados</h1><h2 className="text-xl font-bold text-green-700 mb-2">Mega da Virada 2025</h2></div><div className="mb-6"><label className="block font-bold mb-2">Senha:</label><input type="password" value={senhaInput} onChange={e => setSenhaInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && fazerLogin()} placeholder="Digite a senha" className="w-full p-4 border-2 rounded-lg text-lg focus:border-green-600 outline-none" /></div><button onClick={fazerLogin} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-lg text-lg">🔓 Entrar</button></div></div>);
-        
-        if (participanteSelecionado) return (<div className="max-w-4xl mx-auto"><button onClick={() => {setParticipanteSelecionado(null); setNumerosEscolhidos([]);}} className="text-white mb-4">⬅️ Voltar</button><div className="bg-white rounded-xl p-6"><h2 className="text-2xl font-bold text-green-900 mb-1 text-center">{participanteSelecionado.nome}</h2><p className="text-center text-gray-600 mb-6">{participanteSelecionado.cotas} cota(s) • R$ {participanteSelecionado.valorPago.toFixed(2)}</p><div className="mb-6"><label className="block font-bold mb-2">Escolha até 6 números: <span className="text-green-600">{numerosEscolhidos.length}/6</span></label>{numerosEscolhidos.length > 0 && (<div className="mb-3 flex gap-2 flex-wrap">{numerosEscolhidos.map(n => <span key={n} className="bg-green-600 text-white px-4 py-2 rounded-full font-bold">{String(n).padStart(2, '0')}</span>)}</div>)}<div className="grid grid-cols-10 gap-2">{Array.from({length: 60}, (_, i) => i+1).map(num => (<button key={num} onClick={() => toggleNumero(num)} className={`aspect-square rounded-lg font-bold transition ${numerosEscolhidos.includes(num) ? 'bg-green-600 text-white scale-110' : 'bg-gray-100 hover:bg-gray-200'}`}>{num}</button>))}</div></div><button onClick={salvarNumeros} disabled={numerosEscolhidos.length === 0} className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-4 rounded-lg">✅ Salvar</button></div></div>);
-        
-        if (pagina === 'home') {
-            const totalComNumeros = participantes.filter(p => p.numeros?.length > 0).length;
-            return (<div className="max-w-6xl mx-auto"><div className="text-center mb-6 text-white"><h1 className="text-4xl font-bold mb-2">🎰 Tavares e Agregados 🎰</h1><h2 className="text-2xl font-bold mb-3">Mega da Virada 2025</h2><div className="inline-block bg-yellow-400 text-green-900 px-6 py-3 rounded-full font-bold text-xl">R$ {VALOR_TOTAL_BOLAO.toFixed(2)}</div></div><div className="grid md:grid-cols-3 gap-4 mb-6"><div className="bg-white rounded-lg p-4 text-center"><p className="text-3xl font-bold text-green-900">{participantes.length}</p><p className="text-sm">Participantes</p></div><div className="bg-white rounded-lg p-4 text-center"><p className="text-3xl font-bold text-blue-900">{totalComNumeros}/{participantes.length}</p><p className="text-sm">Escolheram</p></div><div className="bg-white rounded-lg p-4 text-center"><p className="text-3xl font-bold text-purple-900">{apostas.length}</p><p className="text-sm">Jogos</p></div></div><div className="bg-white rounded-xl p-6 mb-6"><h3 className="text-2xl font-bold mb-4">👥 Participantes</h3><div className="grid md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">{participantes.map(p => (<div key={p.id} className="border-2 border-green-200 rounded-lg p-4 bg-green-50"><div className="flex justify-between items-start mb-3"><div className="flex-1"><h4 className="font-bold text-lg">{p.nome}</h4><p className="text-sm text-gray-600">{p.cotas} cota(s) • R$ {p.valorPago.toFixed(2)}</p></div><button onClick={() => abrirEscolhaNumeros(p)} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold text-sm ml-2">{p.numeros?.length > 0 ? '✏️' : '➕'}</button></div>{p.numeros?.length > 0 ? (<div className="flex gap-1 flex-wrap">{p.numeros.map(n => (<span key={n} className="bg-green-600 text-white w-8 h-8 flex items-center justify-center rounded-full text-xs font-bold">{String(n).padStart(2, '0')}</span>))}</div>) : <p className="text-sm text-gray-500 italic">Aguardando</p>}</div>))}</div></div><div className="grid md:grid-cols-2 gap-4"><button onClick={() => setPagina('consulta')} className="bg-white rounded-xl p-6 shadow-xl"><div className="text-5xl mb-3">🎰</div><h3 className="text-xl font-bold text-blue-900">Ver Jogos</h3></button><button onClick={() => setPagina('admin')} className="bg-white rounded-xl p-6 shadow-xl"><div className="text-5xl mb-3">💡</div><h3 className="text-xl font-bold text-purple-900">Estratégias de Jogos</h3></button></div></div>);
-        }
-        
-        if (pagina === 'consulta') return (<div className="max-w-6xl mx-auto"><button onClick={() => setPagina('home')} className="text-white mb-4">⬅️ Voltar</button><div className="bg-white rounded-xl p-6"><h2 className="text-3xl font-bold text-center mb-6">🎰 Jogos</h2>{apostas.length === 0 ? (<div className="text-center py-12"><div className="text-6xl mb-4">⏳</div><h3 className="text-2xl font-bold">Aguardando</h3></div>) : (<><div className="mb-6"><div className="grid md:grid-cols-3 gap-3 max-h-96 overflow-y-auto">{apostas.map((a, i) => (<div key={i} className="bg-green-50 border p-3 rounded-lg"><div className="flex justify-between text-xs mb-2"><span>#{i+1}</span><span className="font-bold">{a.tipo}</span></div><div className="flex gap-1 flex-wrap justify-center">{a.nums.map((n, j) => (<span key={j} className="bg-green-600 text-white w-7 h-7 flex items-center justify-center rounded-full text-xs font-bold">{String(n).padStart(2, '0')}</span>))}</div></div>))}</div></div><div className="bg-green-50 border-2 border-green-300 rounded-lg p-6"><h3 className="font-bold text-xl mb-4 text-center">✅ Aprovar</h3>{aprovacoes.length > 0 && (<div className="mb-4"><p className="font-bold mb-2">Aprovaram ({aprovacoes.length}):</p><div className="flex flex-wrap gap-2">{aprovacoes.map((a, i) => <span key={i} className="bg-green-600 text-white px-3 py-1 rounded-full text-sm">{a} ✅</span>)}</div></div>)}<div className="flex gap-2"><input type="text" value={nomeAprovacao} onChange={e => setNomeAprovacao(e.target.value)} placeholder="Seu nome" className="flex-1 p-3 border-2 rounded-lg" /><button onClick={aprovar} className="bg-green-600 text-white px-6 py-3 rounded-lg font-bold">✅</button></div></div></>)}</div></div>);
-        
-        if (pagina === 'admin') {
-            // Admin sem senha - acesso direto
-            
-            return (<div className="max-w-6xl mx-auto pb-8"><button onClick={() => {setAutenticadoAdmin(false); setPagina('home');}} className="text-white mb-4">⬅️ Sair</button><div className="bg-white rounded-xl p-6"><h2 className="text-3xl font-bold mb-6 text-center">🔐 Escolha a Estratégia</h2><div className="grid md:grid-cols-2 gap-6 mb-6"><button onClick={() => setEstrategia('hibrida-a')} className={`p-6 border-3 rounded-xl transition-all ${estrategia === 'hibrida-a' ? 'border-green-600 bg-green-50 shadow-lg' : 'border-gray-300'}`}><div className="text-4xl mb-3">🎯</div><h3 className="text-2xl font-bold text-green-900 mb-3">Opção A - Híbrida</h3><div className="text-left bg-white p-4 rounded-lg mb-3"><p className="text-sm font-bold mb-2">Composição:</p><ul className="text-sm space-y-1"><li>• 1 jogo de 9 números</li><li>• 2 jogos de 7 números</li><li>• 10 jogos simples</li></ul></div><div className="bg-yellow-100 border-2 border-yellow-400 p-3 rounded-lg"><p className="font-bold text-green-800">R$ 648,00</p><p className="text-sm text-green-700">Sobra R$ 162,00</p></div></button><button onClick={() => setEstrategia('hibrida-b')} className={`p-6 border-3 rounded-xl transition-all ${estrategia === 'hibrida-b' ? 'border-purple-600 bg-purple-50 shadow-lg' : 'border-gray-300'}`}><div className="text-4xl mb-3">🚀</div><h3 className="text-2xl font-bold text-purple-900 mb-3">Opção B - Potência Máxima</h3><div className="text-left bg-white p-4 rounded-lg mb-3"><p className="text-sm font-bold mb-2">Composição:</p><ul className="text-sm space-y-1"><li>• 1 jogo de 9 números</li><li>• 5 jogos de 7 números</li><li>• 16 jogos simples</li></ul></div><div className="bg-purple-100 border-2 border-purple-400 p-3 rounded-lg"><p className="font-bold text-purple-800">R$ 810,00</p><p className="text-sm text-purple-700">Investimento total</p></div></button></div><div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4 mb-6"><h4 className="font-bold text-blue-900 mb-2">💡 Por que jogo de 9 números?</h4><p className="text-sm text-blue-800">Equivale a <strong>84 apostas simples</strong>. Se acertarmos a Sena, ganhamos também várias Quinas e Quadras!</p></div><div className="bg-gray-50 border-2 border-gray-300 rounded-lg p-6 mb-6"><h3 className="text-xl font-bold mb-4">💬 Sugestões</h3><div className="mb-4"><textarea value={novaSugestao} onChange={e => setNovaSugestao(e.target.value)} placeholder="Sugira uma estratégia..." className="w-full p-3 border-2 rounded-lg h-24 text-sm" /><button onClick={adicionarSugestao} className="mt-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold text-sm">📝 Enviar</button></div>{sugestoes.length > 0 && (<div className="space-y-2"><p className="font-bold text-sm mb-2">Recebidas ({sugestoes.length}):</p>{sugestoes.map((s, i) => (<div key={i} className="bg-white p-3 rounded-lg border"><div className="flex justify-between mb-1"><span className="font-bold text-sm">{s.nome}</span><span className="text-xs text-gray-500">{s.data}</span></div><p className="text-sm">{s.sugestao}</p></div>))}</div>)}</div><button onClick={gerarApostas} disabled={todosNumeros().length < 6} className="w-full bg-purple-600 text-white font-bold py-4 rounded-lg mb-4 disabled:bg-gray-400 text-lg">✨ Gerar Apostas</button>{apostas.length > 0 && (<button onClick={exportar} className="w-full bg-blue-600 text-white font-bold py-4 rounded-lg">💾 Exportar</button>)}</div></div>);
-        }
+
+        // --- RENDERS (REDUZIDOS PARA EXEMPLO, MANTENHA SEU CSS) ---
+
+        if (!logado) return (
+            <div className="max-w-md mx-auto mt-20 p-8 bg-white rounded-xl shadow-2xl text-center">
+                <h1 className="text-2xl font-bold mb-6">🎰 Tavares e Agregados</h1>
+                <input type="password" value={senhaInput} onChange={e => setSenhaInput(e.target.value)} className="w-full p-4 border rounded mb-4" placeholder="Senha 2025" />
+                <button onClick={fazerLogin} className="w-full bg-green-600 text-white py-4 rounded font-bold">Entrar</button>
+            </div>
+        );
+
+        if (participanteSelecionado) return (
+            <div className="max-w-4xl mx-auto bg-white p-6 rounded-xl mt-10">
+                <button onClick={() => setParticipanteSelecionado(null)} className="mb-4 text-green-800 font-bold">⬅ Voltar</button>
+                <h2 className="text-2xl font-bold mb-4">Escolha de {participanteSelecionado.nome}</h2>
+                <div className="grid grid-cols-10 gap-2 mb-6">
+                    {Array.from({length: 60}, (_, i) => i+1).map(num => (
+                        <button key={num} onClick={() => toggleNumero(num)} 
+                                className={`p-2 rounded font-bold ${numerosEscolhidos.includes(num) ? 'bg-green-600 text-white' : 'bg-gray-100'}`}>
+                            {num}
+                        </button>
+                    ))}
+                </div>
+                <button onClick={salvarNumeros} className="w-full bg-green-600 text-white py-4 rounded font-bold">Sincronizar com o Grupo</button>
+            </div>
+        );
+
+        return (
+            <div className="max-w-6xl mx-auto text-white">
+                <header className="text-center py-10">
+                    <h1 className="text-4xl font-bold">Mega da Virada 2025</h1>
+                    <div className="mt-4 bg-yellow-400 text-green-900 px-6 py-2 rounded-full inline-block font-bold">Orçamento: R$ {VALOR_TOTAL_BOLAO.toFixed(2)}</div>
+                </header>
+
+                <div className="grid md:grid-cols-2 gap-6">
+                    <section className="bg-white text-black p-6 rounded-xl">
+                        <h3 className="text-xl font-bold mb-4">👥 Participantes</h3>
+                        <div className="space-y-2 h-96 overflow-y-auto">
+                            {participantes.map(p => (
+                                <div key={p.id} className="flex justify-between items-center p-3 bg-gray-50 rounded border">
+                                    <span>{p.nome} ({p.numeros?.length || 0}/6)</span>
+                                    <button onClick={() => abrirEscolhaNumeros(p)} className="bg-green-600 text-white px-3 py-1 rounded text-sm">Escolher</button>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+
+                    <section className="space-y-6">
+                        <div className="bg-purple-800 p-6 rounded-xl">
+                            <h3 className="text-xl font-bold mb-4">⚙️ Painel de Controle</h3>
+                            <select value={estrategia} onChange={e => setEstrategia(e.target.value)} className="w-full p-3 text-black rounded mb-4">
+                                <option value="hibrida-a">Opção A (R$ 648)</option>
+                                <option value="hibrida-b">Opção B (R$ 810)</option>
+                            </select>
+                            <button onClick={gerarApostas} className="w-full bg-yellow-500 text-black font-bold py-3 rounded">✨ Gerar/Atualizar Apostas</button>
+                        </div>
+                        
+                        <div className="bg-blue-800 p-6 rounded-xl">
+                            <h3 className="text-xl font-bold mb-4">💬 Sugestões</h3>
+                            <textarea value={novaSugestao} onChange={e => setNovaSugestao(e.target.value)} className="w-full p-2 text-black rounded h-20" placeholder="Ideias?" />
+                            <button onClick={adicionarSugestao} className="mt-2 bg-blue-500 w-full py-2 rounded font-bold">Enviar</button>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        );
     }
+
     ReactDOM.createRoot(document.getElementById('root')).render(<App />);
     </script>
 </body>
