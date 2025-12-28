@@ -17,14 +17,14 @@
     <script type="text/babel">
     const { useState, useEffect } = React;
 
-    // CONFIGURAÇÃO SUPABASE - COLOQUE SUAS CHAVES AQUI
-    const SUPABASE_URL = 'https://pyhkhudqlbimkowvqtxe.supabase.co'; 
+    // --- CONFIGURAÇÃO SUPABASE (COLE AQUI) ---
+    const SUPABASE_URL = 'https://pyhkhudqlbimkowvqtxe.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5aGtodWRxbGJpbWtvd3ZxdHhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY5NTQxMzIsImV4cCI6MjA4MjUzMDEzMn0.ifgPFlRb9LHZHq3_H2sHMPY7wSpvRXDtaJikI0U86eE';
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     const SENHA_ACESSO = '2025';
     const VALOR_TOTAL_BOLAO = 810.00;
-    
+
     const PARTICIPANTES_INICIAIS = [
         { id: 1, nome: "Sara Santana", cotas: 3, valorPago: 45.00, numeros: [] },
         { id: 2, nome: "Cida Regoso", cotas: 2, valorPago: 30.00, numeros: [] },
@@ -56,7 +56,6 @@
     function App() {
         const [logado, setLogado] = useState(false);
         const [senhaInput, setSenhaInput] = useState('');
-        const [pagina, setPagina] = useState('home');
         const [participantes, setParticipantes] = useState(PARTICIPANTES_INICIAIS);
         const [participanteSelecionado, setParticipanteSelecionado] = useState(null);
         const [numerosEscolhidos, setNumerosEscolhidos] = useState([]);
@@ -67,188 +66,288 @@
         const [sugestoes, setSugestoes] = useState([]);
         const [novaSugestao, setNovaSugestao] = useState('');
 
-        // --- FUNÇÕES DE PERSISTÊNCIA ---
-        
-        const carregarDados = async () => {
-            const { data, error } = await supabaseClient
-                .from('bolao_data')
-                .select('content')
-                .eq('id', 'estado_geral')
-                .single();
+        // --- FUNÇÕES DE SINCRONIZAÇÃO (BACKEND) ---
 
-            if (data?.content) {
-                const c = data.content;
-                if (c.participantes) setParticipantes(c.participantes);
-                if (c.apostas) setApostas(c.apostas);
-                if (c.estrategia) setEstrategia(c.estrategia);
-                if (c.aprovacoes) setAprovacoes(c.aprovacoes);
-                if (c.sugestoes) setSugestoes(c.sugestoes);
+        const salvarNoBanco = async (novoEstado) => {
+            try {
+                const { error } = await supabaseClient
+                    .from('bolao_data')
+                    .upsert({ 
+                        id: 'estado_geral', 
+                        content: novoEstado,
+                        updated_at: new Date() 
+                    });
+                if (error) throw error;
+            } catch (err) {
+                console.error("Erro ao salvar:", err);
             }
         };
 
-        const salvarNoBanco = async (novoEstado) => {
-            await supabaseClient.from('bolao_data').upsert({
-                id: 'estado_geral',
-                content: novoEstado,
-                updated_at: new Date()
-            });
+        const carregarDados = async () => {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('bolao_data')
+                    .select('content')
+                    .eq('id', 'estado_geral')
+                    .single();
+                
+                if (data && data.content) {
+                    const c = data.content;
+                    if (c.participantes) setParticipantes(c.participantes);
+                    if (c.apostas) setApostas(c.apostas);
+                    if (c.estrategia) setEstrategia(c.estrategia);
+                    if (c.aprovacoes) setAprovacoes(c.aprovacoes);
+                    if (c.sugestoes) setSugestoes(c.sugestoes);
+                }
+            } catch (err) {
+                console.log("Banco vazio ou erro ao carregar:", err.message);
+            }
         };
 
-        const syncCompleto = async (overrides = {}) => {
-            const estadoAtual = {
-                participantes, apostas, estrategia, aprovacoes, sugestoes,
-                ...overrides
-            };
-            await salvarNoBanco(estadoAtual);
+        useEffect(() => {
+            carregarDados();
+        }, []);
+
+        // --- LÓGICA DE INTERFACE ---
+
+        const fazerLogin = () => {
+            if (senhaInput === SENHA_ACESSO) setLogado(true);
+            else alert('Senha incorreta!');
         };
 
-        useEffect(() => { carregarDados(); }, []);
+        const abrirEscolhaNumeros = (p) => {
+            setParticipanteSelecionado(p);
+            setNumerosEscolhidos(p.numeros || []);
+        };
 
-        // --- LÓGICA DE INTERAÇÃO ---
-
-        const fazerLogin = () => senhaInput === SENHA_ACESSO ? setLogado(true) : alert('Senha incorreta!');
-        
-        const abrirEscolhaNumeros = (p) => { 
-            setParticipanteSelecionado(p); 
-            setNumerosEscolhidos(p.numeros || []); 
+        const toggleNumero = (num) => {
+            if (numerosEscolhidos.includes(num)) {
+                setNumerosEscolhidos(numerosEscolhidos.filter(n => n !== num));
+            } else if (numerosEscolhidos.length < 6) {
+                setNumerosEscolhidos([...numerosEscolhidos, num].sort((a, b) => a - b));
+            }
         };
 
         const salvarNumeros = async () => {
             if (numerosEscolhidos.length === 0) return alert('Escolha pelo menos 1 número!');
             const novos = participantes.map(p => p.id === participanteSelecionado.id ? {...p, numeros: numerosEscolhidos} : p);
+            
             setParticipantes(novos);
-            await syncCompleto({ participantes: novos });
-            alert('Números sincronizados! ✅');
-            setParticipanteSelecionado(null);
-        };
+            await salvarNoBanco({ participantes: novos, apostas, estrategia, aprovacoes, sugestoes });
 
-        const toggleNumero = (num) => {
-            if (numerosEscolhidos.includes(num)) setNumerosEscolhidos(numerosEscolhidos.filter(n => n !== num));
-            else if (numerosEscolhidos.length < 6) setNumerosEscolhidos([...numerosEscolhidos, num].sort((a,b) => a-b));
+            alert('Números sincronizados com o grupo! ✅');
+            setParticipanteSelecionado(null);
+            setNumerosEscolhidos([]);
         };
 
         const todosNumeros = () => {
             const nums = [];
-            participantes.forEach(p => p.numeros && nums.push(...p.numeros));
-            return [...new Set(nums)].sort((a,b) => a-b);
+            participantes.forEach(p => {
+                if (p.numeros) nums.push(...p.numeros);
+            });
+            return [...new Set(nums)].sort((a, b) => a - b);
+        };
+
+        const adicionarSugestao = async () => {
+            if (!novaSugestao.trim()) return;
+            const nome = prompt('Qual o seu nome?');
+            if (!nome) return;
+            
+            const nova = {
+                nome,
+                sugestao: novaSugestao,
+                data: new Date().toLocaleString()
+            };
+            const novasSugestoes = [...sugestoes, nova];
+            setSugestoes(novasSugestoes);
+            await salvarNoBanco({ participantes, apostas, estrategia, aprovacoes, sugestoes: novasSugestoes });
+            setNovaSugestao('');
         };
 
         const gerarApostas = async () => {
             const pool = todosNumeros();
-            if (pool.length < 6) return alert('Mínimo 6 números escolhidos pelo grupo!');
-            
-            const resultado = [];
+            if (pool.length < 6) return alert('Precisamos de pelo menos 6 números escolhidos!');
+
             const sortear = (qt) => {
-                const nums = [], temp = [...pool];
-                while (nums.length < qt && temp.length > 0) {
-                    const i = Math.floor(Math.random() * temp.length);
-                    nums.push(temp[i]);
-                    temp.splice(i, 1);
+                const nums = [];
+                const tempPool = [...pool];
+                while (nums.length < qt && tempPool.length > 0) {
+                    const idx = Math.floor(Math.random() * tempPool.length);
+                    nums.push(tempPool.splice(idx, 1)[0]);
                 }
                 while (nums.length < qt) {
-                    const n = Math.floor(Math.random() * 60) + 1;
-                    if (!nums.includes(n)) nums.push(n);
+                    const extra = Math.floor(Math.random() * 60) + 1;
+                    if (!nums.includes(extra)) nums.push(extra);
                 }
-                return nums.sort((a,b) => a-b);
+                return nums.sort((a, b) => a - b);
             };
 
+            const novasApostas = [];
             if (estrategia === 'hibrida-a') {
-                resultado.push({tipo: '9 números', nums: sortear(9)});
-                resultado.push({tipo: '7 números', nums: sortear(7)});
-                resultado.push({tipo: '7 números', nums: sortear(7)});
-                for (let i=0; i<10; i++) resultado.push({tipo: '6 números', nums: sortear(6)});
+                novasApostas.push({ tipo: '9 números', nums: sortear(9) });
+                novasApostas.push({ tipo: '7 números', nums: sortear(7) });
+                novasApostas.push({ tipo: '7 números', nums: sortear(7) });
+                for(let i=0; i<10; i++) novasApostas.push({ tipo: '6 números', nums: sortear(6) });
             } else {
-                resultado.push({tipo: '9 números', nums: sortear(9)});
-                for (let i=0; i<5; i++) resultado.push({tipo: '7 números', nums: sortear(7)});
-                for (let i=0; i<16; i++) resultado.push({tipo: '6 números', nums: sortear(6)});
+                novasApostas.push({ tipo: '9 números', nums: sortear(9) });
+                for(let i=0; i<5; i++) novasApostas.push({ tipo: '7 números', nums: sortear(7) });
+                for(let i=0; i<16; i++) novasApostas.push({ tipo: '6 números', nums: sortear(6) });
             }
-            
-            setApostas(resultado);
-            await syncCompleto({ apostas: resultado, estrategia });
-            alert('Apostas oficiais geradas e salvas! 🚀');
+
+            setApostas(novasApostas);
+            await salvarNoBanco({ participantes, apostas: novasApostas, estrategia, aprovacoes, sugestoes });
         };
 
         const aprovar = async () => {
-            if (!nomeAprovacao.trim()) return alert('Digite seu nome!');
-            const novas = [...aprovacoes, nomeAprovacao.trim()];
+            if (!nomeAprovacao.trim()) return;
+            const novas = [...aprovacoes, nomeAprovacao];
             setAprovacoes(novas);
-            await syncCompleto({ aprovacoes: novas });
+            await salvarNoBanco({ participantes, apostas, estrategia, aprovacoes: novas, sugestoes });
             setNomeAprovacao('');
         };
 
-        const adicionarSugestao = async () => {
-            const nome = prompt('Seu nome:');
-            if (!nome) return;
-            const nova = {nome, sugestao: novaSugestao, data: new Date().toLocaleString()};
-            const novas = [...sugestoes, nova];
-            setSugestoes(novas);
-            await syncCompleto({ sugestoes: novas });
-            setNovaSugestao('');
-        };
+        // --- COMPONENTES DE INTERFACE (IGUAIS AO SEU ORIGINAL) ---
 
-        // --- RENDERS (REDUZIDOS PARA EXEMPLO, MANTENHA SEU CSS) ---
-
-        if (!logado) return (
-            <div className="max-w-md mx-auto mt-20 p-8 bg-white rounded-xl shadow-2xl text-center">
-                <h1 className="text-2xl font-bold mb-6">🎰 Tavares e Agregados</h1>
-                <input type="password" value={senhaInput} onChange={e => setSenhaInput(e.target.value)} className="w-full p-4 border rounded mb-4" placeholder="Senha 2025" />
-                <button onClick={fazerLogin} className="w-full bg-green-600 text-white py-4 rounded font-bold">Entrar</button>
-            </div>
-        );
-
-        if (participanteSelecionado) return (
-            <div className="max-w-4xl mx-auto bg-white p-6 rounded-xl mt-10">
-                <button onClick={() => setParticipanteSelecionado(null)} className="mb-4 text-green-800 font-bold">⬅ Voltar</button>
-                <h2 className="text-2xl font-bold mb-4">Escolha de {participanteSelecionado.nome}</h2>
-                <div className="grid grid-cols-10 gap-2 mb-6">
-                    {Array.from({length: 60}, (_, i) => i+1).map(num => (
-                        <button key={num} onClick={() => toggleNumero(num)} 
-                                className={`p-2 rounded font-bold ${numerosEscolhidos.includes(num) ? 'bg-green-600 text-white' : 'bg-gray-100'}`}>
-                            {num}
-                        </button>
-                    ))}
+        if (!logado) {
+            return (
+                <div className="max-w-md mx-auto mt-20 p-8 bg-white rounded-2xl shadow-2xl">
+                    <h1 className="text-3xl font-black text-center text-green-800 mb-8 uppercase tracking-tighter">🎰 Bolão Tavares</h1>
+                    <div className="space-y-4">
+                        <input type="password" value={senhaInput} onChange={(e) => setSenhaInput(e.target.value)}
+                            placeholder="Digite a senha 2025" className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-green-500 outline-none text-center text-2xl" />
+                        <button onClick={fazerLogin} className="w-full bg-green-600 hover:bg-green-700 text-white font-black py-4 rounded-xl transition-all active:scale-95 shadow-lg uppercase">Entrar no Grupo</button>
+                    </div>
                 </div>
-                <button onClick={salvarNumeros} className="w-full bg-green-600 text-white py-4 rounded font-bold">Sincronizar com o Grupo</button>
-            </div>
-        );
+            );
+        }
+
+        if (participanteSelecionado) {
+            return (
+                <div className="max-w-2xl mx-auto bg-white rounded-3xl p-6 shadow-2xl">
+                    <div className="flex justify-between items-center mb-6">
+                        <button onClick={() => setParticipanteSelecionado(null)} className="text-gray-400 hover:text-gray-600 font-bold">← Voltar</button>
+                        <h2 className="text-xl font-black text-green-800 uppercase tracking-tighter">{participanteSelecionado.nome}</h2>
+                        <div className="w-10"></div>
+                    </div>
+                    
+                    <p className="text-center text-gray-500 mb-6 font-medium">Escolha 6 números para representar a sua cota no bolão:</p>
+                    
+                    <div className="grid grid-cols-6 sm:grid-cols-10 gap-2 mb-8">
+                        {Array.from({length: 60}, (_, i) => i + 1).map(num => (
+                            <button key={num} onClick={() => toggleNumero(num)}
+                                className={`h-10 w-10 rounded-full flex items-center justify-center font-bold transition-all ${numerosEscolhidos.includes(num) ? 'bg-green-600 text-white scale-110 shadow-md' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}>
+                                {num}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="bg-green-50 p-4 rounded-2xl mb-6 flex justify-between items-center">
+                        <span className="font-bold text-green-800">Selecionados: {numerosEscolhidos.length}/6</span>
+                        <div className="flex gap-1">
+                            {numerosEscolhidos.map(n => <span key={n} className="bg-green-600 text-white px-2 py-1 rounded-md text-xs font-bold">{n}</span>)}
+                        </div>
+                    </div>
+
+                    <button onClick={salvarNumeros} className="w-full bg-green-600 text-white font-black py-4 rounded-2xl shadow-lg hover:bg-green-700 active:scale-95 transition-all uppercase">Sincronizar com o Grupo</button>
+                </div>
+            );
+        }
 
         return (
-            <div className="max-w-6xl mx-auto text-white">
-                <header className="text-center py-10">
-                    <h1 className="text-4xl font-bold">Mega da Virada 2025</h1>
-                    <div className="mt-4 bg-yellow-400 text-green-900 px-6 py-2 rounded-full inline-block font-bold">Orçamento: R$ {VALOR_TOTAL_BOLAO.toFixed(2)}</div>
+            <div className="max-w-6xl mx-auto">
+                <header className="text-center mb-10 pt-6">
+                    <h1 className="text-4xl md:text-6xl font-black text-white uppercase tracking-tighter drop-shadow-lg mb-2">Mega da Virada 2025</h1>
+                    <div className="inline-block bg-yellow-400 text-green-900 px-6 py-1 rounded-full font-black text-sm uppercase shadow-md">Total do Bolão: R$ {VALOR_TOTAL_BOLAO.toFixed(2)}</div>
                 </header>
 
-                <div className="grid md:grid-cols-2 gap-6">
-                    <section className="bg-white text-black p-6 rounded-xl">
-                        <h3 className="text-xl font-bold mb-4">👥 Participantes</h3>
-                        <div className="space-y-2 h-96 overflow-y-auto">
+                <div className="grid lg:grid-cols-3 gap-6">
+                    {/* Lista de Participantes */}
+                    <div className="lg:col-span-2 bg-white/95 backdrop-blur rounded-3xl shadow-2xl p-6">
+                        <h2 className="text-2xl font-black text-green-900 mb-6 uppercase tracking-tighter border-b pb-4">👥 Nosso Grupo</h2>
+                        <div className="grid md:grid-cols-2 gap-3 max-h-[600px] overflow-y-auto pr-2">
                             {participantes.map(p => (
-                                <div key={p.id} className="flex justify-between items-center p-3 bg-gray-50 rounded border">
-                                    <span>{p.nome} ({p.numeros?.length || 0}/6)</span>
-                                    <button onClick={() => abrirEscolhaNumeros(p)} className="bg-green-600 text-white px-3 py-1 rounded text-sm">Escolher</button>
+                                <div key={p.id} className="bg-gray-50 p-4 rounded-2xl border-2 border-transparent hover:border-green-200 transition-all flex justify-between items-center">
+                                    <div>
+                                        <p className="font-black text-gray-800 leading-none mb-1">{p.nome}</p>
+                                        <p className="text-xs text-gray-500 font-bold uppercase tracking-widest">{p.cotas} {p.cotas > 1 ? 'Cotas' : 'Cota'} • R$ {p.valorPago.toFixed(2)}</p>
+                                    </div>
+                                    <button onClick={() => abrirEscolhaNumeros(p)} 
+                                        className={`px-4 py-2 rounded-xl font-bold text-xs uppercase transition-all ${p.numeros?.length > 0 ? 'bg-green-100 text-green-700' : 'bg-green-600 text-white shadow-md hover:bg-green-700'}`}>
+                                        {p.numeros?.length > 0 ? '✅ Edit' : 'Escolher'}
+                                    </button>
                                 </div>
                             ))}
                         </div>
-                    </section>
+                    </div>
 
-                    <section className="space-y-6">
-                        <div className="bg-purple-800 p-6 rounded-xl">
-                            <h3 className="text-xl font-bold mb-4">⚙️ Painel de Controle</h3>
-                            <select value={estrategia} onChange={e => setEstrategia(e.target.value)} className="w-full p-3 text-black rounded mb-4">
-                                <option value="hibrida-a">Opção A (R$ 648)</option>
-                                <option value="hibrida-b">Opção B (R$ 810)</option>
+                    {/* Coluna Lateral */}
+                    <div className="space-y-6">
+                        {/* Estratégia */}
+                        <div className="bg-white/95 backdrop-blur rounded-3xl shadow-2xl p-6">
+                            <h3 className="text-xl font-black text-green-900 mb-4 uppercase tracking-tighter">⚙️ Estratégia</h3>
+                            <select value={estrategia} onChange={(e) => setEstrategia(e.target.value)} className="w-full p-3 bg-gray-100 rounded-xl font-bold text-gray-700 mb-4 border-none outline-none">
+                                <option value="hibrida-a">Opção A: R$ 648 (1x9, 2x7, 10x6)</option>
+                                <option value="hibrida-b">Opção B: R$ 810 (1x9, 5x7, 16x6)</option>
                             </select>
-                            <button onClick={gerarApostas} className="w-full bg-yellow-500 text-black font-bold py-3 rounded">✨ Gerar/Atualizar Apostas</button>
+                            <div className="bg-yellow-50 p-4 rounded-2xl mb-4 text-xs font-bold text-yellow-800 leading-tight">
+                                ✨ O jogo de 9 dezenas equivale a 84 apostas simples. Se acertarmos a Sena, ganhamos prêmios multiplicados!
+                            </div>
+                            <button onClick={gerarApostas} disabled={todosNumeros().length < 6}
+                                className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-300 text-white font-black py-4 rounded-2xl shadow-lg transition-all uppercase">Gerar Apostas Oficiais</button>
                         </div>
-                        
-                        <div className="bg-blue-800 p-6 rounded-xl">
-                            <h3 className="text-xl font-bold mb-4">💬 Sugestões</h3>
-                            <textarea value={novaSugestao} onChange={e => setNovaSugestao(e.target.value)} className="w-full p-2 text-black rounded h-20" placeholder="Ideias?" />
-                            <button onClick={adicionarSugestao} className="mt-2 bg-blue-500 w-full py-2 rounded font-bold">Enviar</button>
+
+                        {/* Sugestões */}
+                        <div className="bg-white/95 backdrop-blur rounded-3xl shadow-2xl p-6">
+                            <h3 className="text-xl font-black text-green-900 mb-4 uppercase tracking-tighter">💬 Recados</h3>
+                            <textarea value={novaSugestao} onChange={(e) => setNovaSugestao(e.target.value)} placeholder="Deixe um recado para o grupo..."
+                                className="w-full p-4 bg-gray-100 rounded-2xl text-sm mb-3 h-24 outline-none resize-none font-medium"></textarea>
+                            <button onClick={adicionarSugestao} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3 rounded-xl transition-all uppercase text-xs">Enviar Mensagem</button>
+                            
+                            <div className="mt-4 space-y-2 max-h-40 overflow-y-auto pr-1">
+                                {sugestoes.map((s, i) => (
+                                    <div key={i} className="bg-gray-50 p-3 rounded-xl text-xs border">
+                                        <div className="flex justify-between font-black text-blue-900 mb-1 italic"><span>@{s.nome}</span><span>{s.data.split(',')[0]}</span></div>
+                                        <p className="text-gray-600 font-medium">{s.sugestao}</p>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
-                    </section>
+                    </div>
                 </div>
+
+                {/* Área de Apostas Geradas */}
+                {apostas.length > 0 && (
+                    <div className="mt-10 bg-white/95 backdrop-blur rounded-3xl shadow-2xl p-8 mb-20">
+                        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+                            <h2 className="text-3xl font-black text-green-900 uppercase tracking-tighter">🎲 Nossos Jogos Gerados</h2>
+                            <div className="flex gap-2">
+                                <input type="text" value={nomeAprovacao} onChange={(e) => setNomeAprovacao(e.target.value)} placeholder="Seu nome"
+                                    className="p-3 bg-gray-100 rounded-xl outline-none font-bold text-sm" />
+                                <button onClick={aprovar} className="bg-green-600 text-white px-6 py-3 rounded-xl font-black text-xs uppercase hover:bg-green-700 transition-all">Aprovar Jogos</button>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+                            {apostas.map((a, i) => (
+                                <div key={i} className="bg-gray-50 p-4 rounded-2xl border-2 border-dashed border-gray-300">
+                                    <span className="text-[10px] font-black uppercase text-gray-400 mb-2 block">{a.tipo}</span>
+                                    <div className="flex flex-wrap gap-2">
+                                        {a.nums.map(n => <span key={n} className="h-8 w-8 bg-white border-2 border-green-600 text-green-700 rounded-full flex items-center justify-center font-black text-sm shadow-sm">{n}</span>)}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {aprovacoes.length > 0 && (
+                            <div className="border-t pt-6">
+                                <p className="text-xs font-black text-gray-400 uppercase mb-3">Participantes que aprovaram estes jogos:</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {aprovacoes.map((n, i) => <span key={i} className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-black uppercase">✅ {n}</span>)}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
         );
     }
