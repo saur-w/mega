@@ -118,16 +118,51 @@
             setNumerosEscolhidos(p.numeros || []); 
         };
 
+        // const salvarNumeros = async () => {
+        //     if (numerosEscolhidos.length === 0) return alert('Escolha pelo menos 1 número!');
+        //     const novos = participantes.map(p => p.id === participanteSelecionado.id ? {...p, numeros: numerosEscolhidos} : p);
+        //     setParticipantes(novos);
+        //     await syncSnapshot({ participantes: novos });
+        //     alert('Números salvos no banco! ✅');
+        //     setParticipanteSelecionado(null);
+        //     setNumerosEscolhidos([]);
+        // };
+
         const salvarNumeros = async () => {
             if (numerosEscolhidos.length === 0) return alert('Escolha pelo menos 1 número!');
-            const novos = participantes.map(p => p.id === participanteSelecionado.id ? {...p, numeros: numerosEscolhidos} : p);
-            setParticipantes(novos);
-            await syncSnapshot({ participantes: novos });
-            alert('Números salvos no banco! ✅');
-            setParticipanteSelecionado(null);
-            setNumerosEscolhidos([]);
+                
+            // 1. Prepara o dado primeiro
+            const novosParticipantes = participantes.map(p => 
+                p.id === participanteSelecionado.id ? {...p, numeros: numerosEscolhidos} : p
+            );
+        
+            // 2. Tenta salvar no banco ANTES de fechar a tela
+            try {
+                const { error } = await supabaseClient
+                    .from('bolao_data')
+                    .upsert({ 
+                        id: 'estado_geral', 
+                        content: { 
+                            participantes: novosParticipantes, 
+                            apostas, estrategia, aprovacoes, sugestoes 
+                        },
+                        updated_at: new Date() 
+                    });
+                
+                if (error) {
+                    alert("Erro ao sincronizar: " + error.message);
+                    return; // Interrompe se der erro
+                }
+            
+                // 3. Só atualiza a tela se o banco confirmou
+                setParticipantes(novosParticipantes);
+                alert('Sincronizado com sucesso! ✅');
+                setParticipanteSelecionado(null);
+            
+            } catch (err) {
+                alert("Falha catastrófica: " + err.message);
+            }
         };
-
         const toggleNumero = (num) => {
             if (numerosEscolhidos.includes(num)) setNumerosEscolhidos(numerosEscolhidos.filter(n => n !== num));
             else if (numerosEscolhidos.length < 6) setNumerosEscolhidos([...numerosEscolhidos, num].sort((a,b) => a-b));
