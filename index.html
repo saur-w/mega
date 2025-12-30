@@ -6,14 +6,15 @@
     <title>Tavares e Agregados - Mega da Virada 2025</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 </head>
 <body class="bg-gradient-to-br from-green-900 via-green-800 to-emerald-900 min-h-screen p-4">
     <div id="root"></div>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script type="text/babel">
-    const { useState, useEffect } = React;
+    
+    <script>
+    const { useState, useEffect, createElement: e } = React;
+    const { createRoot } = ReactDOM;
 
     const SUPABASE_URL = 'https://pyhkhudqlbimkowvqtxe.supabase.co'; 
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB5aGtodWRxbGJpbWtvd3ZxdHhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY5NTQxMzIsImV4cCI6MjA4MjUzMDEzMn0.ifgPFlRb9LHZHq3_H2sHMPY7wSpvRXDtaJikI0U86eE';
@@ -63,6 +64,10 @@
         const [nomeAprovacao, setNomeAprovacao] = useState('');
         const [sugestoes, setSugestoes] = useState([]);
         const [novaSugestao, setNovaSugestao] = useState('');
+        
+        // Novos estados para conferência
+        const [numerosSorteados, setNumerosSorteados] = useState([]);
+        const [resultados, setResultados] = useState(null);
 
         const carregarDados = async () => {
             try {
@@ -83,6 +88,7 @@
                     setEstrategia(c.estrategia || 'hibrida-b');
                     setAprovacoes(c.aprovacoes || []);
                     setSugestoes(c.sugestoes || []);
+                    setNumerosSorteados(c.numerosSorteados || []);
                 } else {
                     setParticipantes(PARTICIPANTES_INICIAIS);
                 }
@@ -100,7 +106,7 @@
 
         const syncSnapshot = async (overrides = {}) => {
             const snapshot = {
-                participantes, apostas, estrategia, aprovacoes, sugestoes,
+                participantes, apostas, estrategia, aprovacoes, sugestoes, numerosSorteados,
                 ...overrides
             };
             
@@ -153,6 +159,45 @@
         const toggleNumero = (num) => {
             if (numerosEscolhidos.includes(num)) setNumerosEscolhidos(numerosEscolhidos.filter(n => n !== num));
             else if (numerosEscolhidos.length < 6) setNumerosEscolhidos([...numerosEscolhidos, num].sort((a,b) => a-b));
+        };
+
+        const toggleNumeroSorteado = (num) => {
+            if (numerosSorteados.includes(num)) {
+                setNumerosSorteados(numerosSorteados.filter(n => n !== num));
+            } else if (numerosSorteados.length < 6) {
+                setNumerosSorteados([...numerosSorteados, num].sort((a,b) => a-b));
+            }
+        };
+
+        const conferirResultado = async () => {
+            if (numerosSorteados.length !== 6) {
+                return alert('Selecione exatamente 6 números sorteados!');
+            }
+
+            const resultadosProcessados = apostas.map((aposta, idx) => {
+                const acertos = aposta.nums.filter(n => numerosSorteados.includes(n)).length;
+                let premio = '';
+                if (acertos === 6) premio = 'SENA';
+                else if (acertos === 5) premio = 'QUINA';
+                else if (acertos === 4) premio = 'QUADRA';
+                
+                return {
+                    numero: idx + 1,
+                    tipo: aposta.tipo,
+                    numeros: aposta.nums,
+                    acertos,
+                    premio
+                };
+            });
+
+            setResultados(resultadosProcessados);
+            await syncSnapshot({ numerosSorteados });
+        };
+
+        const limparConferencia = async () => {
+            setNumerosSorteados([]);
+            setResultados(null);
+            await syncSnapshot({ numerosSorteados: [] });
         };
 
         const todosNumeros = () => {
@@ -231,6 +276,22 @@
             });
             txt += '\nAPOSTAS:\n';
             apostas.forEach((a, i) => txt += `${String(i+1).padStart(3, '0')}. [${a.tipo}] ${a.nums.map(n => String(n).padStart(2,'0')).join('-')}\n`);
+            
+            if (resultados) {
+                txt += '\n\nRESULTADO DO SORTEIO:\n';
+                txt += `Números sorteados: ${numerosSorteados.map(n => String(n).padStart(2,'0')).join('-')}\n\n`;
+                const premios = resultados.filter(r => r.premio);
+                if (premios.length > 0) {
+                    txt += 'JOGOS PREMIADOS:\n';
+                    premios.forEach(p => {
+                        txt += `Jogo #${String(p.numero).padStart(3,'0')} - ${p.premio} (${p.acertos} acertos)\n`;
+                        txt += `Números: ${p.numeros.map(n => String(n).padStart(2,'0')).join('-')}\n\n`;
+                    });
+                } else {
+                    txt += 'Nenhum prêmio desta vez. Boa sorte na próxima!\n';
+                }
+            }
+            
             const blob = new Blob([txt], {type: 'text/plain;charset=utf-8'});
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
@@ -238,22 +299,412 @@
             link.click();
         };
 
-        if (!logado) return (<div className="max-w-md mx-auto mt-20"><div className="bg-white rounded-xl p-8 shadow-2xl"><div className="text-center mb-6"><div className="text-6xl mb-4">🎰</div><h1 className="text-2xl font-bold text-green-900 mb-1">Tavares e Agregados</h1><h2 className="text-xl font-bold text-green-700 mb-2">Mega da Virada 2025</h2></div><div className="mb-6"><label className="block font-bold mb-2">Senha:</label><input type="password" value={senhaInput} onChange={e => setSenhaInput(e.target.value)} onKeyPress={e => e.key === 'Enter' && fazerLogin()} placeholder="Digite a senha" className="w-full p-4 border-2 rounded-lg text-lg focus:border-green-600 outline-none" /></div><button onClick={fazerLogin} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-lg text-lg">🔓 Entrar</button></div></div>);
+        if (!logado) {
+            return e('div', { className: 'max-w-md mx-auto mt-20' },
+                e('div', { className: 'bg-white rounded-xl p-8 shadow-2xl' },
+                    e('div', { className: 'text-center mb-6' },
+                        e('div', { className: 'text-6xl mb-4' }, '🎰'),
+                        e('h1', { className: 'text-2xl font-bold text-green-900 mb-1' }, 'Tavares e Agregados'),
+                        e('h2', { className: 'text-xl font-bold text-green-700 mb-2' }, 'Mega da Virada 2025')
+                    ),
+                    e('div', { className: 'mb-6' },
+                        e('label', { className: 'block font-bold mb-2' }, 'Senha:'),
+                        e('input', {
+                            type: 'password',
+                            value: senhaInput,
+                            onChange: ev => setSenhaInput(ev.target.value),
+                            onKeyPress: ev => ev.key === 'Enter' && fazerLogin(),
+                            placeholder: 'Digite a senha',
+                            className: 'w-full p-4 border-2 rounded-lg text-lg focus:border-green-600 outline-none'
+                        })
+                    ),
+                    e('button', {
+                        onClick: fazerLogin,
+                        className: 'w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-lg text-lg'
+                    }, '🔓 Entrar')
+                )
+            );
+        }
         
-        if (participanteSelecionado) return (<div className="max-w-4xl mx-auto"><button onClick={() => {setParticipanteSelecionado(null); setNumerosEscolhidos([]);}} className="text-white mb-4">⬅️ Voltar</button><div className="bg-white rounded-xl p-6"><h2 className="text-2xl font-bold text-green-900 mb-1 text-center">{participanteSelecionado.nome}</h2><p className="text-center text-gray-600 mb-6">{participanteSelecionado.cotas} cota(s) • R$ {participanteSelecionado.valorPago.toFixed(2)}</p><div className="mb-6"><label className="block font-bold mb-2">Escolha até 6 números: <span className="text-green-600">{numerosEscolhidos.length}/6</span></label>{numerosEscolhidos.length > 0 && (<div className="mb-3 flex gap-2 flex-wrap">{numerosEscolhidos.map(n => <span key={n} className="bg-green-600 text-white px-4 py-2 rounded-full font-bold">{String(n).padStart(2, '0')}</span>)}</div>)}<div className="grid grid-cols-10 gap-2">{Array.from({length: 60}, (_, i) => i+1).map(num => (<button key={num} onClick={() => toggleNumero(num)} className={`aspect-square rounded-lg font-bold transition ${numerosEscolhidos.includes(num) ? 'bg-green-600 text-white scale-110' : 'bg-gray-100 hover:bg-gray-200'}`}>{num}</button>))}</div></div><button onClick={salvarNumeros} disabled={numerosEscolhidos.length === 0} className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-4 rounded-lg">✅ Salvar</button></div></div>);
+        if (participanteSelecionado) {
+            return e('div', { className: 'max-w-4xl mx-auto' },
+                e('button', {
+                    onClick: () => { setParticipanteSelecionado(null); setNumerosEscolhidos([]); },
+                    className: 'text-white mb-4'
+                }, '⬅️ Voltar'),
+                e('div', { className: 'bg-white rounded-xl p-6' },
+                    e('h2', { className: 'text-2xl font-bold text-green-900 mb-1 text-center' }, participanteSelecionado.nome),
+                    e('p', { className: 'text-center text-gray-600 mb-6' }, 
+                        `${participanteSelecionado.cotas} cota(s) • R$ ${participanteSelecionado.valorPago.toFixed(2)}`
+                    ),
+                    e('div', { className: 'mb-6' },
+                        e('label', { className: 'block font-bold mb-2' },
+                            'Escolha até 6 números: ',
+                            e('span', { className: 'text-green-600' }, `${numerosEscolhidos.length}/6`)
+                        ),
+                        numerosEscolhidos.length > 0 && e('div', { className: 'mb-3 flex gap-2 flex-wrap' },
+                            numerosEscolhidos.map(n => e('span', {
+                                key: n,
+                                className: 'bg-green-600 text-white px-4 py-2 rounded-full font-bold'
+                            }, String(n).padStart(2, '0')))
+                        ),
+                        e('div', { className: 'grid grid-cols-10 gap-2' },
+                            Array.from({length: 60}, (_, i) => i+1).map(num =>
+                                e('button', {
+                                    key: num,
+                                    onClick: () => toggleNumero(num),
+                                    className: `aspect-square rounded-lg font-bold transition ${numerosEscolhidos.includes(num) ? 'bg-green-600 text-white scale-110' : 'bg-gray-100 hover:bg-gray-200'}`
+                                }, num)
+                            )
+                        )
+                    ),
+                    e('button', {
+                        onClick: salvarNumeros,
+                        disabled: numerosEscolhidos.length === 0,
+                        className: 'w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-4 rounded-lg'
+                    }, '✅ Salvar')
+                )
+            );
+        }
         
         if (pagina === 'home') {
             const totalComNumeros = participantes.filter(p => p.numeros?.length > 0).length;
-            return (<div className="max-w-6xl mx-auto"><div className="text-center mb-6 text-white"><h1 className="text-4xl font-bold mb-2">🎰 Tavares e Agregados 🎰</h1><h2 className="text-2xl font-bold mb-3">Mega da Virada 2025</h2><div className="inline-block bg-yellow-400 text-green-900 px-6 py-3 rounded-full font-bold text-xl">R$ {VALOR_TOTAL_BOLAO.toFixed(2)}</div></div><div className="grid md:grid-cols-3 gap-4 mb-6"><div className="bg-white rounded-lg p-4 text-center"><p className="text-3xl font-bold text-green-900">{participantes.length}</p><p className="text-sm">Participantes</p></div><div className="bg-white rounded-lg p-4 text-center"><p className="text-3xl font-bold text-blue-900">{totalComNumeros}/{participantes.length}</p><p className="text-sm">Escolheram</p></div><div className="bg-white rounded-lg p-4 text-center"><p className="text-3xl font-bold text-purple-900">{apostas.length}</p><p className="text-sm">Jogos</p></div></div><div className="bg-white rounded-xl p-6 mb-6"><h3 className="text-2xl font-bold mb-4">👥 Participantes</h3><div className="grid md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">{participantes.map(p => (<div key={p.id} className="border-2 border-green-200 rounded-lg p-4 bg-green-50"><div className="flex justify-between items-start mb-3"><div className="flex-1"><h4 className="font-bold text-lg">{p.nome}</h4><p className="text-sm text-gray-600">{p.cotas} cota(s) • R$ {p.valorPago.toFixed(2)}</p></div><button onClick={() => abrirEscolhaNumeros(p)} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold text-sm ml-2">{p.numeros?.length > 0 ? '✏️' : '➕'}</button></div>{p.numeros?.length > 0 ? (<div className="flex gap-1 flex-wrap">{p.numeros.map(n => (<span key={n} className="bg-green-600 text-white w-8 h-8 flex items-center justify-center rounded-full text-xs font-bold">{String(n).padStart(2, '0')}</span>))}</div>) : <p className="text-sm text-gray-500 italic">Aguardando</p>}</div>))}</div></div><div className="grid md:grid-cols-2 gap-4"><button onClick={() => setPagina('consulta')} className="bg-white rounded-xl p-6 shadow-xl"><div className="text-5xl mb-3">🎰</div><h3 className="text-xl font-bold text-blue-900">Ver Jogos</h3></button><button onClick={() => setPagina('admin')} className="bg-white rounded-xl p-6 shadow-xl"><div className="text-5xl mb-3">💡</div><h3 className="text-xl font-bold text-purple-900">Estratégias</h3></button></div></div>);
+            return e('div', { className: 'max-w-6xl mx-auto' },
+                e('div', { className: 'text-center mb-6 text-white' },
+                    e('h1', { className: 'text-4xl font-bold mb-2' }, '🎰 Tavares e Agregados 🎰'),
+                    e('h2', { className: 'text-2xl font-bold mb-3' }, 'Mega da Virada 2025'),
+                    e('div', { className: 'inline-block bg-yellow-400 text-green-900 px-6 py-3 rounded-full font-bold text-xl' },
+                        `R$ ${VALOR_TOTAL_BOLAO.toFixed(2)}`
+                    )
+                ),
+                e('div', { className: 'grid md:grid-cols-3 gap-4 mb-6' },
+                    e('div', { className: 'bg-white rounded-lg p-4 text-center' },
+                        e('p', { className: 'text-3xl font-bold text-green-900' }, participantes.length),
+                        e('p', { className: 'text-sm' }, 'Participantes')
+                    ),
+                    e('div', { className: 'bg-white rounded-lg p-4 text-center' },
+                        e('p', { className: 'text-3xl font-bold text-blue-900' }, `${totalComNumeros}/${participantes.length}`),
+                        e('p', { className: 'text-sm' }, 'Escolheram')
+                    ),
+                    e('div', { className: 'bg-white rounded-lg p-4 text-center' },
+                        e('p', { className: 'text-3xl font-bold text-purple-900' }, apostas.length),
+                        e('p', { className: 'text-sm' }, 'Jogos')
+                    )
+                ),
+                e('div', { className: 'bg-white rounded-xl p-6 mb-6' },
+                    e('h3', { className: 'text-2xl font-bold mb-4' }, '👥 Participantes'),
+                    e('div', { className: 'grid md:grid-cols-2 gap-3 max-h-96 overflow-y-auto' },
+                        participantes.map(p =>
+                            e('div', {
+                                key: p.id,
+                                className: 'border-2 border-green-200 rounded-lg p-4 bg-green-50'
+                            },
+                                e('div', { className: 'flex justify-between items-start mb-3' },
+                                    e('div', { className: 'flex-1' },
+                                        e('h4', { className: 'font-bold text-lg' }, p.nome),
+                                        e('p', { className: 'text-sm text-gray-600' }, 
+                                            `${p.cotas} cota(s) • R$ ${p.valorPago.toFixed(2)}`
+                                        )
+                                    ),
+                                    e('button', {
+                                        onClick: () => abrirEscolhaNumeros(p),
+                                        className: 'bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold text-sm ml-2'
+                                    }, p.numeros?.length > 0 ? '✏️' : '➕')
+                                ),
+                                p.numeros?.length > 0
+                                    ? e('div', { className: 'flex gap-1 flex-wrap' },
+                                        p.numeros.map(n =>
+                                            e('span', {
+                                                key: n,
+                                                className: 'bg-green-600 text-white w-8 h-8 flex items-center justify-center rounded-full text-xs font-bold'
+                                            }, String(n).padStart(2, '0'))
+                                        )
+                                    )
+                                    : e('p', { className: 'text-sm text-gray-500 italic' }, 'Aguardando')
+                            )
+                        )
+                    )
+                ),
+                e('div', { className: 'grid md:grid-cols-2 gap-4' },
+                    e('button', {
+                        onClick: () => setPagina('consulta'),
+                        className: 'bg-white rounded-xl p-6 shadow-xl'
+                    },
+                        e('div', { className: 'text-5xl mb-3' }, '🎰'),
+                        e('h3', { className: 'text-xl font-bold text-blue-900' }, 'Ver Jogos')
+                    ),
+                    e('button', {
+                        onClick: () => setPagina('admin'),
+                        className: 'bg-white rounded-xl p-6 shadow-xl'
+                    },
+                        e('div', { className: 'text-5xl mb-3' }, '💡'),
+                        e('h3', { className: 'text-xl font-bold text-purple-900' }, 'Estratégias')
+                    )
+                )
+            );
         }
         
-        if (pagina === 'consulta') return (<div className="max-w-6xl mx-auto"><button onClick={() => setPagina('home')} className="text-white mb-4">⬅️ Voltar</button><div className="bg-white rounded-xl p-6"><h2 className="text-3xl font-bold text-center mb-6">🎰 Jogos</h2>{apostas.length === 0 ? (<div className="text-center py-12"><div className="text-6xl mb-4">⏳</div><h3 className="text-2xl font-bold">Aguardando</h3></div>) : (<><div className="mb-6"><div className="grid md:grid-cols-3 gap-3 max-h-96 overflow-y-auto">{apostas.map((a, i) => (<div key={i} className="bg-green-50 border p-3 rounded-lg"><div className="flex justify-between text-xs mb-2"><span>#{i+1}</span><span className="font-bold">{a.tipo}</span></div><div className="flex gap-1 flex-wrap justify-center">{a.nums.map((n, j) => (<span key={j} className="bg-green-600 text-white w-7 h-7 flex items-center justify-center rounded-full text-xs font-bold">{String(n).padStart(2, '0')}</span>))}</div></div>))}</div></div><div className="bg-green-50 border-2 border-green-300 rounded-lg p-6"><h3 className="font-bold text-xl mb-4 text-center">✅ Aprovar</h3>{aprovacoes.length > 0 && (<div className="mb-4"><p className="font-bold mb-2">Aprovaram ({aprovacoes.length}):</p><div className="flex flex-wrap gap-2">{aprovacoes.map((a, i) => <span key={i} className="bg-green-600 text-white px-3 py-1 rounded-full text-sm">{a} ✅</span>)}</div></div>)}<div className="flex gap-2"><input type="text" value={nomeAprovacao} onChange={e => setNomeAprovacao(e.target.value)} placeholder="Seu nome" className="flex-1 p-3 border-2 rounded-lg" /><button onClick={aprovar} className="bg-green-600 text-white px-6 py-3 rounded-lg font-bold">✅</button></div></div></>)}</div></div>);
+        if (pagina === 'consulta') {
+            const senas = resultados?.filter(r => r.premio === 'SENA').length || 0;
+            const quinas = resultados?.filter(r => r.premio === 'QUINA').length || 0;
+            const quadras = resultados?.filter(r => r.premio === 'QUADRA').length || 0;
+            
+            return e('div', { className: 'max-w-6xl mx-auto' },
+                e('button', {
+                    onClick: () => setPagina('home'),
+                    className: 'text-white mb-4'
+                }, '⬅️ Voltar'),
+                e('div', { className: 'bg-white rounded-xl p-6' },
+                    e('h2', { className: 'text-3xl font-bold text-center mb-6' }, '🎰 Jogos'),
+                    
+                    apostas.length === 0
+                        ? e('div', { className: 'text-center py-12' },
+                            e('div', { className: 'text-6xl mb-4' }, '⏳'),
+                            e('h3', { className: 'text-2xl font-bold' }, 'Aguardando')
+                        )
+                        : e('div', null,
+                            // Seção de conferência
+                            e('div', { className: 'bg-yellow-50 border-2 border-yellow-400 rounded-lg p-6 mb-6' },
+                                e('h3', { className: 'font-bold text-xl mb-4 text-center' }, '🎯 Conferir Resultado'),
+                                numerosSorteados.length > 0 && e('div', { className: 'mb-4 flex gap-2 flex-wrap justify-center' },
+                                    numerosSorteados.map(n => e('span', {
+                                        key: n,
+                                        className: 'bg-yellow-500 text-white px-6 py-3 rounded-full font-bold text-xl'
+                                    }, String(n).padStart(2, '0')))
+                                ),
+                                e('label', { className: 'block font-bold mb-3 text-center' },
+                                    `Selecione os 6 números sorteados: ${numerosSorteados.length}/6`
+                                ),
+                                e('div', { className: 'grid grid-cols-10 gap-2 mb-4' },
+                                    Array.from({length: 60}, (_, i) => i+1).map(num =>
+                                        e('button', {
+                                            key: num,
+                                            onClick: () => toggleNumeroSorteado(num),
+                                            className: `aspect-square rounded-lg font-bold transition ${numerosSorteados.includes(num) ? 'bg-yellow-500 text-white scale-110' : 'bg-gray-100 hover:bg-gray-200'}`
+                                        }, num)
+                                    )
+                                ),
+                                e('div', { className: 'flex gap-2' },
+                                    e('button', {
+                                        onClick: conferirResultado,
+                                        disabled: numerosSorteados.length !== 6,
+                                        className: 'flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-bold py-4 rounded-lg'
+                                    }, '✅ Conferir'),
+                                    e('button', {
+                                        onClick: limparConferencia,
+                                        className: 'bg-red-600 hover:bg-red-700 text-white font-bold py-4 px-6 rounded-lg'
+                                    }, '🗑️')
+                                )
+                            ),
+                            
+                            // Resultados da conferência
+                            resultados && e('div', { className: 'mb-6' },
+                                e('div', { className: 'grid grid-cols-3 gap-4 mb-6' },
+                                    e('div', { className: 'bg-green-100 border-2 border-green-500 rounded-lg p-4 text-center' },
+                                        e('p', { className: 'text-4xl font-bold text-green-700' }, senas),
+                                        e('p', { className: 'text-sm font-bold' }, 'SENA')
+                                    ),
+                                    e('div', { className: 'bg-blue-100 border-2 border-blue-500 rounded-lg p-4 text-center' },
+                                        e('p', { className: 'text-4xl font-bold text-blue-700' }, quinas),
+                                        e('p', { className: 'text-sm font-bold' }, 'QUINA')
+                                    ),
+                                    e('div', { className: 'bg-purple-100 border-2 border-purple-500 rounded-lg p-4 text-center' },
+                                        e('p', { className: 'text-4xl font-bold text-purple-700' }, quadras),
+                                        e('p', { className: 'text-sm font-bold' }, 'QUADRA')
+                                    )
+                                )
+                            ),
+                            
+                            // Lista de jogos
+                            e('div', { className: 'mb-6' },
+                                e('h3', { className: 'font-bold text-xl mb-4' }, 
+                                    resultados ? 'Resultados Detalhados:' : 'Todos os Jogos:'
+                                ),
+                                e('div', { className: 'grid md:grid-cols-3 gap-3 max-h-96 overflow-y-auto' },
+                                    (resultados || apostas).map((item, i) => {
+                                        const a = resultados ? item : item;
+                                        const nums = resultados ? item.numeros : item.nums;
+                                        
+                                        let bgColor = 'bg-green-50';
+                                        let borderColor = 'border-gray-200';
+                                        
+                                        if (resultados) {
+                                            if (item.premio === 'SENA') { bgColor = 'bg-green-50'; borderColor = 'border-green-500'; }
+                                            else if (item.premio === 'QUINA') { bgColor = 'bg-blue-50'; borderColor = 'border-blue-500'; }
+                                            else if (item.premio === 'QUADRA') { bgColor = 'bg-purple-50'; borderColor = 'border-purple-500'; }
+                                        }
+                                        
+                                        return e('div', {
+                                            key: i,
+                                            className: `${bgColor} border-2 ${borderColor} p-3 rounded-lg`
+                                        },
+                                            e('div', { className: 'flex justify-between text-xs mb-2' },
+                                                e('span', null, `#${i+1}`),
+                                                e('div', { className: 'flex gap-2 items-center' },
+                                                    e('span', { className: 'font-bold' }, resultados ? item.tipo : a.tipo),
+                                                    resultados && item.premio && e('span', { 
+                                                        className: `px-2 py-0.5 rounded-full font-bold text-xs ${
+                                                            item.premio === 'SENA' ? 'bg-green-600' :
+                                                            item.premio === 'QUINA' ? 'bg-blue-600' : 'bg-purple-600'
+                                                        } text-white`
+                                                    }, item.premio)
+                                                )
+                                            ),
+                                            resultados && e('p', { className: 'text-xs text-center mb-2 font-bold' },
+                                                `${item.acertos} acertos`
+                                            ),
+                                            e('div', { className: 'flex gap-1 flex-wrap justify-center' },
+                                                nums.map((n, j) =>
+                                                    e('span', {
+                                                        key: j,
+                                                        className: `w-7 h-7 flex items-center justify-center rounded-full text-xs font-bold ${
+                                                            resultados && numerosSorteados.includes(n) 
+                                                                ? 'bg-yellow-500 text-white' 
+                                                                : 'bg-green-600 text-white'
+                                                        }`
+                                                    }, String(n).padStart(2, '0'))
+                                                )
+                                            )
+                                        );
+                                    })
+                                )
+                            ),
+                            
+                            // Aprovação
+                            e('div', { className: 'bg-green-50 border-2 border-green-300 rounded-lg p-6' },
+                                e('h3', { className: 'font-bold text-xl mb-4 text-center' }, '✅ Aprovar'),
+                                aprovacoes.length > 0 && e('div', { className: 'mb-4' },
+                                    e('p', { className: 'font-bold mb-2' }, `Aprovaram (${aprovacoes.length}):`),
+                                    e('div', { className: 'flex flex-wrap gap-2' },
+                                        aprovacoes.map((a, i) =>
+                                            e('span', {
+                                                key: i,
+                                                className: 'bg-green-600 text-white px-3 py-1 rounded-full text-sm'
+                                            }, `${a} ✅`)
+                                        )
+                                    )
+                                ),
+                                e('div', { className: 'flex gap-2' },
+                                    e('input', {
+                                        type: 'text',
+                                        value: nomeAprovacao,
+                                        onChange: ev => setNomeAprovacao(ev.target.value),
+                                        placeholder: 'Seu nome',
+                                        className: 'flex-1 p-3 border-2 rounded-lg'
+                                    }),
+                                    e('button', {
+                                        onClick: aprovar,
+                                        className: 'bg-green-600 text-white px-6 py-3 rounded-lg font-bold'
+                                    }, '✅')
+                                )
+                            )
+                        )
+                )
+            );
+        }
         
         if (pagina === 'admin') {
-            return (<div className="max-w-6xl mx-auto pb-8"><button onClick={() => setPagina('home')} className="text-white mb-4">⬅️ Voltar</button><div className="bg-white rounded-xl p-6"><h2 className="text-3xl font-bold mb-6 text-center">🔐 Escolha a Estratégia</h2><div className="grid md:grid-cols-2 gap-6 mb-6"><button onClick={() => setEstrategia('hibrida-a')} className={`p-6 border-3 rounded-xl transition-all ${estrategia === 'hibrida-a' ? 'border-green-600 bg-green-50 shadow-lg' : 'border-gray-300'}`}><div className="text-4xl mb-3">🎯</div><h3 className="text-2xl font-bold text-green-900 mb-3">Opção A - Híbrida</h3><div className="text-left bg-white p-4 rounded-lg mb-3"><p className="text-sm font-bold mb-2">Composição:</p><ul className="text-sm space-y-1"><li>• 1 jogo de 9 números</li><li>• 2 jogos de 7 números</li><li>• 10 jogos simples</li></ul></div><div className="bg-yellow-100 border-2 border-yellow-400 p-3 rounded-lg"><p className="font-bold text-green-800">R$ 648,00</p><p className="text-sm text-green-700">Sobra R$ 162,00</p></div></button><button onClick={() => setEstrategia('hibrida-b')} className={`p-6 border-3 rounded-xl transition-all ${estrategia === 'hibrida-b' ? 'border-purple-600 bg-purple-50 shadow-lg' : 'border-gray-300'}`}><div className="text-4xl mb-3">🚀</div><h3 className="text-2xl font-bold text-purple-900 mb-3">Opção B - Potência Máxima</h3><div className="text-left bg-white p-4 rounded-lg mb-3"><p className="text-sm font-bold mb-2">Composição:</p><ul className="text-sm space-y-1"><li>• 1 jogo de 9 números</li><li>• 5 jogos de 7 números</li><li>• 16 jogos simples</li></ul></div><div className="bg-purple-100 border-2 border-purple-400 p-3 rounded-lg"><p className="font-bold text-purple-800">R$ 810,00</p><p className="text-sm text-purple-700">Investimento total</p></div></button></div><div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4 mb-6"><h4 className="font-bold text-blue-900 mb-2">💡 Por que jogo de 9 números?</h4><p className="text-sm text-blue-800">Equivale a <strong>84 apostas simples</strong>. Se acertarmos a Sena, ganhamos também várias Quinas e Quadras!</p></div><div className="bg-gray-50 border-2 border-gray-300 rounded-lg p-6 mb-6"><h3 className="text-xl font-bold mb-4">💬 Sugestões</h3><div className="mb-4"><textarea value={novaSugestao} onChange={e => setNovaSugestao(e.target.value)} placeholder="Sugira uma estratégia..." className="w-full p-3 border-2 rounded-lg h-24 text-sm" /><button onClick={adicionarSugestao} className="mt-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold text-sm">📝 Enviar</button></div>{sugestoes.length > 0 && (<div className="space-y-2"><p className="font-bold text-sm mb-2">Recebidas ({sugestoes.length}):</p>{sugestoes.map((s, i) => (<div key={i} className="bg-white p-3 rounded-lg border"><div className="flex justify-between mb-1"><span className="font-bold text-sm">{s.nome}</span><span className="text-xs text-gray-500">{s.data}</span></div><p className="text-sm">{s.sugestao}</p></div>))}</div>)}</div><button onClick={gerarApostas} disabled={todosNumeros().length < 6} className="w-full bg-purple-600 text-white font-bold py-4 rounded-lg mb-4 disabled:bg-gray-400 text-lg">✨ Gerar Apostas</button>{apostas.length > 0 && (<button onClick={exportar} className="w-full bg-blue-600 text-white font-bold py-4 rounded-lg">💾 Exportar</button>)}</div></div>);
+            return e('div', { className: 'max-w-6xl mx-auto pb-8' },
+                e('button', {
+                    onClick: () => setPagina('home'),
+                    className: 'text-white mb-4'
+                }, '⬅️ Voltar'),
+                e('div', { className: 'bg-white rounded-xl p-6' },
+                    e('h2', { className: 'text-3xl font-bold mb-6 text-center' }, '🔐 Escolha a Estratégia'),
+                    e('div', { className: 'grid md:grid-cols-2 gap-6 mb-6' },
+                        e('button', {
+                            onClick: () => setEstrategia('hibrida-a'),
+                            className: `p-6 border-3 rounded-xl transition-all ${estrategia === 'hibrida-a' ? 'border-green-600 bg-green-50 shadow-lg' : 'border-gray-300'}`
+                        },
+                            e('div', { className: 'text-4xl mb-3' }, '🎯'),
+                            e('h3', { className: 'text-2xl font-bold text-green-900 mb-3' }, 'Opção A - Híbrida'),
+                            e('div', { className: 'text-left bg-white p-4 rounded-lg mb-3' },
+                                e('p', { className: 'text-sm font-bold mb-2' }, 'Composição:'),
+                                e('ul', { className: 'text-sm space-y-1' },
+                                    e('li', null, '• 1 jogo de 9 números'),
+                                    e('li', null, '• 2 jogos de 7 números'),
+                                    e('li', null, '• 10 jogos simples')
+                                )
+                            ),
+                            e('div', { className: 'bg-yellow-100 border-2 border-yellow-400 p-3 rounded-lg' },
+                                e('p', { className: 'font-bold text-green-800' }, 'R$ 648,00'),
+                                e('p', { className: 'text-sm text-green-700' }, 'Sobra R$ 162,00')
+                            )
+                        ),
+                        e('button', {
+                            onClick: () => setEstrategia('hibrida-b'),
+                            className: `p-6 border-3 rounded-xl transition-all ${estrategia === 'hibrida-b' ? 'border-purple-600 bg-purple-50 shadow-lg' : 'border-gray-300'}`
+                        },
+                            e('div', { className: 'text-4xl mb-3' }, '🚀'),
+                            e('h3', { className: 'text-2xl font-bold text-purple-900 mb-3' }, 'Opção B - Potência Máxima'),
+                            e('div', { className: 'text-left bg-white p-4 rounded-lg mb-3' },
+                                e('p', { className: 'text-sm font-bold mb-2' }, 'Composição:'),
+                                e('ul', { className: 'text-sm space-y-1' },
+                                    e('li', null, '• 1 jogo de 9 números'),
+                                    e('li', null, '• 5 jogos de 7 números'),
+                                    e('li', null, '• 16 jogos simples')
+                                )
+                            ),
+                            e('div', { className: 'bg-purple-100 border-2 border-purple-400 p-3 rounded-lg' },
+                                e('p', { className: 'font-bold text-purple-800' }, 'R$ 810,00'),
+                                e('p', { className: 'text-sm text-purple-700' }, 'Investimento total')
+                            )
+                        )
+                    ),
+                    e('div', { className: 'bg-blue-50 border-2 border-blue-300 rounded-lg p-4 mb-6' },
+                        e('h4', { className: 'font-bold text-blue-900 mb-2' }, '💡 Por que jogo de 9 números?'),
+                        e('p', { className: 'text-sm text-blue-800' },
+                            'Equivale a ',
+                            e('strong', null, '84 apostas simples'),
+                            '. Se acertarmos a Sena, ganhamos também várias Quinas e Quadras!'
+                        )
+                    ),
+                    e('div', { className: 'bg-gray-50 border-2 border-gray-300 rounded-lg p-6 mb-6' },
+                        e('h3', { className: 'text-xl font-bold mb-4' }, '💬 Sugestões'),
+                        e('div', { className: 'mb-4' },
+                            e('textarea', {
+                                value: novaSugestao,
+                                onChange: ev => setNovaSugestao(ev.target.value),
+                                placeholder: 'Sugira uma estratégia...',
+                                className: 'w-full p-3 border-2 rounded-lg h-24 text-sm'
+                            }),
+                            e('button', {
+                                onClick: adicionarSugestao,
+                                className: 'mt-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold text-sm'
+                            }, '📝 Enviar')
+                        ),
+                        sugestoes.length > 0 && e('div', { className: 'space-y-2' },
+                            e('p', { className: 'font-bold text-sm mb-2' }, `Recebidas (${sugestoes.length}):`),
+                            sugestoes.map((s, i) =>
+                                e('div', {
+                                    key: i,
+                                    className: 'bg-white p-3 rounded-lg border'
+                                },
+                                    e('div', { className: 'flex justify-between mb-1' },
+                                        e('span', { className: 'font-bold text-sm' }, s.nome),
+                                        e('span', { className: 'text-xs text-gray-500' }, s.data)
+                                    ),
+                                    e('p', { className: 'text-sm' }, s.sugestao)
+                                )
+                            )
+                        )
+                    ),
+                    e('button', {
+                        onClick: gerarApostas,
+                        disabled: todosNumeros().length < 6,
+                        className: 'w-full bg-purple-600 text-white font-bold py-4 rounded-lg mb-4 disabled:bg-gray-400 text-lg'
+                    }, '✨ Gerar Apostas'),
+                    apostas.length > 0 && e('button', {
+                        onClick: exportar,
+                        className: 'w-full bg-blue-600 text-white font-bold py-4 rounded-lg'
+                    }, '💾 Exportar')
+                )
+            );
         }
     }
-    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    
+    const root = createRoot(document.getElementById('root'));
+    root.render(e(App));
     </script>
 </body>
 </html>
