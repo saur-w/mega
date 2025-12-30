@@ -103,8 +103,7 @@
 
         useEffect(() => {
             carregarDados();
-            const interval = setInterval(carregarDados, 5000);
-            return () => clearInterval(interval);
+            // Removido o refresh automático para não interferir na conferência
         }, []);
 
         const syncSnapshot = async (overrides = {}) => {
@@ -373,6 +372,12 @@
         if (pagina === 'home') {
             const totalComNumeros = participantes.filter(p => p.numeros?.length > 0).length;
             return e('div', { className: 'max-w-6xl mx-auto' },
+                e('div', { className: 'flex justify-end mb-4' },
+                    e('button', {
+                        onClick: carregarDados,
+                        className: 'bg-white text-green-900 px-4 py-2 rounded-lg font-bold shadow hover:shadow-lg transition'
+                    }, '🔄 Atualizar')
+                ),
                 e('div', { className: 'text-center mb-6 text-white' },
                     e('h1', { className: 'text-4xl font-bold mb-2' }, '🎰 Tavares e Agregados 🎰'),
                     e('h2', { className: 'text-2xl font-bold mb-3' }, 'Mega da Virada 2025'),
