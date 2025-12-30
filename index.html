@@ -88,7 +88,10 @@
                     setEstrategia(c.estrategia || 'hibrida-b');
                     setAprovacoes(c.aprovacoes || []);
                     setSugestoes(c.sugestoes || []);
-                    setNumerosSorteados(c.numerosSorteados || []);
+                    // Só atualiza números sorteados se ainda não tiver resultado sendo exibido
+                    if (!resultados && c.numerosSorteados) {
+                        setNumerosSorteados(c.numerosSorteados);
+                    }
                 } else {
                     setParticipantes(PARTICIPANTES_INICIAIS);
                 }
